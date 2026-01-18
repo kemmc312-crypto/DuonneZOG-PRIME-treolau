@@ -1,183 +1,160 @@
 --[[ 
-    DUONNEZOG V15 - ULTIMATE AUTO EXEC
-    - ƯU TIÊN: DIAMOND > GẦN NHẤT
-    - FIX LỖI NHẶT NHANH (DELAY 0.15S)
-    - KHÔNG DỪNG KHI CÓ CHÉN THÁNH/FIST
-    - ANTI-LAG & WHITE SCREEN
+    DUONNEZOG V18 - GMT+7 AUTO RESET & PERSISTENT STATS
+    - Tự động lưu tiền/thời gian vào file, không reset khi đổi server.
+    - Tự động reset stats khi sang ngày mới (00:00 sáng theo giờ VN).
+    - Ưu tiên Diamond Chest > Nearby.
+    - Auto chọn phe Marines.
 ]]
 
-if not game:IsLoaded() then game.Loaded:Wait() end
-if _G.DuonneZOG_Loaded then return end
-_G.DuonneZOG_Loaded = true
+repeat task.wait() until game:IsLoaded()
+if _G.DuonneZOG_V18_Loaded then return end
+_G.DuonneZOG_V18_Loaded = true
 
---// [1. KHỞI TẠO]
+--// [1. KHỞI TẠO BIẾN CƠ SỞ]
 local lp = game:GetService("Players").LocalPlayer
-local rs = game:GetService("ReplicatedStorage")
-local ts = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
-local TeleportService = game:GetService("TeleportService")
-local fileName = "DuonneZOG_Data.json"
+local StatsFile = "DuonneZOG_DailyStats.json"
 
---// [2. HỆ THỐNG LƯU TRỮ]
-local function SaveStats(data)
-    pcall(function() writefile(fileName, HttpService:JSONEncode(data)) end)
+-- Hàm lấy ngày hiện tại theo múi giờ Việt Nam (UTC+7)
+local function GetVNFirstDay()
+    -- UTC+7 = 25200 giây
+    return os.date("!%d/%m/%Y", tick() + 25200)
 end
 
-local function LoadStats()
-    if isfile(fileName) then
-        local success, result = pcall(function() return HttpService:JSONDecode(readfile(fileName)) end)
-        if success then return result end
+--// [2. QUẢN LÝ DỮ LIỆU LƯU TRỮ]
+local function SaveData(data)
+    pcall(function() writefile(StatsFile, HttpService:JSONEncode(data)) end)
+end
+
+local function LoadData()
+    local default = {
+        LastDate = GetVNFirstDay(),
+        TotalMoney = 0,
+        TotalSeconds = 0,
+        LastCheckTime = tick()
+    }
+    
+    if isfile(StatsFile) then
+        local success, result = pcall(function() return HttpService:JSONDecode(readfile(StatsFile)) end)
+        if success then
+            -- Kiểm tra nếu qua ngày mới thì reset
+            if result.LastDate ~= GetVNFirstDay() then
+                return default
+            end
+            return result
+        end
     end
-    return nil
+    return default
 end
 
-local SavedData = LoadStats()
-local TotalMoneyEarned = SavedData and SavedData.Money or 0
-local StartTime = SavedData and SavedData.StartTime or tick()
+local CurrentStats = LoadData()
 local LastBeli = 0
 pcall(function() LastBeli = lp.Data.Beli.Value end)
 
---// [3. GIAO DIỆN UI HIỆN ĐẠI]
+--// [3. GIAO DIỆN UI]
 local sg = Instance.new("ScreenGui", game.CoreGui)
-sg.Name = "DuonneZOG_V15"
-
 local Main = Instance.new("Frame", sg)
-Main.Size = UDim2.new(0, 250, 0, 150)
+Main.Size = UDim2.new(0, 260, 0, 150)
 Main.Position = UDim2.new(0, 15, 0, 15)
 Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-Main.BorderSizePixel = 0
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", Main)
 local stroke = Instance.new("UIStroke", Main)
 stroke.Color = Color3.fromRGB(0, 255, 150)
-stroke.Thickness = 2
 
-local function CreateLabel(text, pos, color, size)
+local function CreateLabel(text, pos, color)
     local l = Instance.new("TextLabel", Main)
-    l.Size = UDim2.new(1, -20, 0, 20)
-    l.Position = pos
-    l.BackgroundTransparency = 1
-    l.Text = text
-    l.TextColor3 = color or Color3.new(1, 1, 1)
-    l.Font = Enum.Font.GothamBold
-    l.TextSize = size or 13
-    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Size = UDim2.new(1, -20, 0, 25)
     l.Position = pos + UDim2.new(0, 10, 0, 0)
+    l.BackgroundTransparency = 1
+    l.TextColor3 = color or Color3.new(1, 1, 1)
+    l.TextSize = 13
+    l.Font = Enum.Font.GothamBold
+    l.Text = text
+    l.TextXAlignment = Enum.TextXAlignment.Left
     return l
 end
 
-local title = CreateLabel("DUONNEZOG V15", UDim2.new(0, 0, 0, 10), Color3.fromRGB(0, 255, 150), 16)
-local moneyTxt = CreateLabel("Earned: +0k", UDim2.new(0, 0, 0, 40))
-local timeTxt = CreateLabel("Time: 00:00:00", UDim2.new(0, 0, 0, 65))
-local hopTxt = CreateLabel("Hop in: 25s", UDim2.new(0, 0, 0, 90), Color3.fromRGB(200, 200, 200))
-local statusTxt = CreateLabel("Status: Initializing...", UDim2.new(0, 0, 0, 115), Color3.fromRGB(255, 255, 0), 11)
+local title = CreateLabel("DUONNEZOG V18 (GMT+7)", UDim2.new(0,0,0,10), Color3.fromRGB(0, 255, 150))
+local moneyTxt = CreateLabel("Daily Earned: 0 Beli", UDim2.new(0,0,0,40))
+local timeTxt = CreateLabel("Daily Time: 00:00:00", UDim2.new(0,0,0,65))
+local dateTxt = CreateLabel("Date: " .. CurrentStats.LastDate, UDim2.new(0,0,0,90), Color3.fromRGB(150, 150, 150))
+local statusTxt = CreateLabel("Status: Running...", UDim2.new(0,0,0,115), Color3.new(1, 1, 0))
 
---// [4. LOGIC SERVER HOP]
-getgenv().Config = {
-    MaxPlayers = 8,
-    HopTimeLimit = 25,
-    WaitBetweenChests = 0.15,
-    IsHopping = false
-}
-
-local function GeminiHop()
-    if getgenv().Config.IsHopping then return end
-    getgenv().Config.IsHopping = true
-    statusTxt.Text = "Status: Finding Server..."
-    pcall(function()
-        local servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100")).data
-        for _, s in ipairs(servers) do
-            if s.playing < s.maxPlayers and s.id ~= game.JobId and s.playing <= getgenv().Config.MaxPlayers then
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, lp)
-                task.wait(5)
-            end
-        end
-    end)
-    getgenv().Config.IsHopping = false
-end
-
---// [5. AUTO CHEST CORE]
+--// [4. VÒNG LẶP CẬP NHẬT STATS & AUTO CHỌN PHE]
 task.spawn(function()
-    while task.wait(0.5) do
-        -- Tự chọn phe Marines
+    while task.wait(1) do
         pcall(function()
-            if lp.Team == nil then
-                rs.Remotes.CommF_:InvokeServer("SetTeam", "Marines")
+            -- Auto Team Marines
+            if lp.Team == nil or lp.Team.Name == "Neutral" then
+                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", "Marines")
             end
-            -- Cập nhật thông số Beli
+
+            -- Tính tiền
             local currentBeli = lp.Data.Beli.Value
-            if currentBeli > LastBeli then TotalMoneyEarned = TotalMoneyEarned + (currentBeli - LastBeli) end
+            if currentBeli > LastBeli and LastBeli ~= 0 then
+                CurrentStats.TotalMoney = CurrentStats.TotalMoney + (currentBeli - LastBeli)
+            end
             LastBeli = currentBeli
-            
-            moneyTxt.Text = "Earned: +" .. string.format("%.1f", TotalMoneyEarned/1000) .. "k Beli"
-            timeTxt.Text = "Time: " .. os.date("!%X", tick() - StartTime)
-            SaveStats({Money = TotalMoneyEarned, StartTime = StartTime})
+
+            -- Tính thời gian (cộng dồn)
+            local now = tick()
+            CurrentStats.TotalSeconds = CurrentStats.TotalSeconds + (now - CurrentStats.LastCheckTime)
+            CurrentStats.LastCheckTime = now
+
+            -- Hiển thị UI
+            moneyTxt.Text = "Daily Earned: " .. math.floor(CurrentStats.TotalMoney/1000) .. "k Beli"
+            local hours = math.floor(CurrentStats.TotalSeconds / 3600)
+            local mins = math.floor((CurrentStats.TotalSeconds % 3600) / 60)
+            local secs = math.floor(CurrentStats.TotalSeconds % 60)
+            timeTxt.Text = string.format("Daily Time: %02d:%02d:%02d", hours, mins, secs)
+
+            -- Lưu dữ liệu vào file
+            SaveData(CurrentStats)
         end)
     end
 end)
 
+--// [5. LOGIC NHẶT RƯƠNG]
 task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if not getgenv().Config.IsHopping then
-            pcall(function()
-                local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-                if not hrp then return end
-
-                local chests = {}
-                for _, v in ipairs(workspace:GetDescendants()) do
-                    if v.Name:find("Chest") and v:FindFirstChild("TouchInterest") then 
-                        table.insert(chests, v) 
-                    end
+    while task.wait(0.1) do
+        pcall(function()
+            local hrp = lp.Character.HumanoidRootPart
+            local chests = {}
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v.Name:find("Chest") and v:FindFirstChild("TouchInterest") then 
+                    table.insert(chests, v) 
                 end
+            end
 
-                -- Ưu tiên Kim Cương > Gần nhất
-                table.sort(chests, function(a, b)
-                    local aD = a.Name:lower():find("diamond")
-                    local bD = b.Name:lower():find("diamond")
-                    if aD and not bD then return true elseif not aD and bD then return false end
-                    return (hrp.Position - a.Position).Magnitude < (hrp.Position - b.Position).Magnitude
-                end)
-
-                for _, chest in ipairs(chests) do
-                    if getgenv().Config.IsHopping or not chest.Parent then break end
-                    statusTxt.Text = "Status: Collecting " .. chest.Name
-                    hrp.CFrame = chest.CFrame
-                    firetouchinterest(hrp, chest, 0)
-                    task.wait(getgenv().Config.WaitBetweenChests)
-                    firetouchinterest(hrp, chest, 1)
-                end
-                statusTxt.Text = "Status: Waiting for chests..."
+            table.sort(chests, function(a, b)
+                local aD = a.Name:lower():find("diamond")
+                local bD = b.Name:lower():find("diamond")
+                if aD and not bD then return true elseif not aD and bD then return false end
+                return (hrp.Position - a.Position).Magnitude < (hrp.Position - b.Position).Magnitude
             end)
-        end
+
+            for _, chest in ipairs(chests) do
+                hrp.CFrame = chest.CFrame
+                firetouchinterest(hrp, chest, 0)
+                task.wait(0.15)
+                firetouchinterest(hrp, chest, 1)
+            end
+        end)
     end
 end)
 
---// [6. TIMER & FIX LAG]
+--// [6. SERVER HOP & FIX LAG]
 task.spawn(function()
-    local timer = getgenv().Config.HopTimeLimit
-    while task.wait(1) do
-        if not getgenv().Config.IsHopping then
-            timer = timer - 1
-            hopTxt.Text = "Hop in: " .. timer .. "s"
-            if timer <= 0 then GeminiHop(); timer = getgenv().Config.HopTimeLimit end
+    task.wait(25) -- Sau 25 giây nhặt sạch rương thì nhảy server
+    local servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100")).data
+    for _, s in ipairs(servers) do
+        if s.playing < s.maxPlayers and s.id ~= game.JobId and s.playing <= 8 then
+            game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, s.id, lp)
+            break
         end
     end
 end)
 
--- Phá va chạm và Fix lag
-game:GetService("RunService").Stepped:Connect(function()
-    if lp.Character then
-        for _, v in pairs(lp.Character:GetDescendants()) do
-            if v:IsA("BasePart") then v.CanCollide = false end
-        end
-    end
-end)
-
--- Màn hình trắng (Tự động bật để giảm lag tối đa)
-task.spawn(function()
-    task.wait(2)
-    game:GetService("RunService"):Set3dRenderingEnabled(false)
-end)
-
--- Anti AFK
+-- Anti-Lag: Tắt render 3D (Nếu muốn xem game thì đổi thành true)
+game:GetService("RunService"):Set3dRenderingEnabled(false)
 for _, v in pairs(getconnections(lp.Idled)) do v:Disable() end

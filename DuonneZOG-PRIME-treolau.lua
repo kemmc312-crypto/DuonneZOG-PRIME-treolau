@@ -1,27 +1,25 @@
 --[[ 
-    DUONNEZOG V30 - FINAL VERSION
-    - THỜI GIAN: Tích lũy (Chỉ chạy khi có script).
-    - RESET: 00:00 VN (Tất cả về 0).
-    - SERVER HOP: 25s liên tục, chặn server cũ 5 phút.
-    - AUTO: Chest, Marines Team, Anti-Lag, Anti-AFK.
+    DUONNEZOG V31 - AUTO RESET ON TIME
+    - Tự động Reset ngay lập tức khi đồng hồ điểm 00:00 VN.
+    - Không cần đổi server, không cần tắt script.
+    - Thời gian tích lũy, Blacklist 5m, Auto Chest.
 ]]
 
 repeat task.wait() until game:IsLoaded()
-if _G.DuonneZOG_V30_Loaded then return end
-_G.DuonneZOG_V30_Loaded = true
+if _G.DuonneZOG_V31_Loaded then return end
+_G.DuonneZOG_V31_Loaded = true
 
 local lp = game:GetService("Players").LocalPlayer
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
-local StatsFile = "DuonneZOG_V30_Final.json"
+local StatsFile = "DuonneZOG_V31_Final.json"
 
 --// [1. HÀM NGÀY GIỜ VN]
 local function GetVNDate()
-    -- Lấy ngày theo múi giờ GMT+7
     return os.date("!%d/%m/%Y", tick() + 25200)
 end
 
---// [2. QUẢN LÝ DỮ LIỆU TÍCH LŨY]
+--// [2. HỆ THỐNG LƯU TRỮ]
 local function SaveData(data)
     pcall(function() writefile(StatsFile, HttpService:JSONEncode(data)) end)
 end
@@ -30,7 +28,7 @@ local function LoadData()
     local today = GetVNDate()
     local default = {
         LastDate = today,
-        Seconds = 0, -- Thời gian tích lũy (không phải real-time)
+        Seconds = 0,
         Money = 0,
         Cup = 0,
         Key = 0,
@@ -39,39 +37,31 @@ local function LoadData()
     
     if isfile(StatsFile) then
         local success, result = pcall(function() return HttpService:JSONDecode(readfile(StatsFile)) end)
-        if success and result then
-            -- Nếu đúng ngày hôm nay: Lấy dữ liệu cũ để chạy tiếp
-            if result.LastDate == today then
-                -- Lọc Blacklist 5 phút
-                local cleanBL = {}
-                for id, t in pairs(result.Blacklist or {}) do
-                    if tick() - t < 300 then cleanBL[id] = t end
-                end
-                result.Blacklist = cleanBL
-                return result
+        if success and result and result.LastDate == today then
+            local cleanBL = {}
+            for id, t in pairs(result.Blacklist or {}) do
+                if tick() - t < 300 then cleanBL[id] = t end
             end
+            result.Blacklist = cleanBL
+            return result
         end
     end
-    -- Nếu sang ngày mới hoặc chưa có file: Trả về 0 hết (Reset)
     return default
 end
 
 local Data = LoadData()
-Data.Blacklist[game.JobId] = tick() -- Chặn server hiện tại
+Data.Blacklist[game.JobId] = tick()
 SaveData(Data)
 
 --// [3. GIAO DIỆN UI]
 local sg = Instance.new("ScreenGui", game.CoreGui)
-sg.Name = "DuonneZOG_V30_Final"
-
 local Main = Instance.new("Frame", sg)
 Main.Size = UDim2.new(0, 260, 0, 200)
 Main.Position = UDim2.new(0, 20, 0, 20)
-Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+Main.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+Instance.new("UICorner", Main)
 local stroke = Instance.new("UIStroke", Main)
 stroke.Color = Color3.fromRGB(0, 255, 150)
-stroke.Thickness = 2
 
 local function CreateLabel(txt, pos, color)
     local l = Instance.new("TextLabel", Main)
@@ -85,28 +75,53 @@ local function CreateLabel(txt, pos, color)
     return l
 end
 
-local title = CreateLabel("DUONNEZOG V30 - FINAL", UDim2.new(0,0,0,10), Color3.fromRGB(0, 255, 150))
-local moneyTxt = CreateLabel("Beli Earned: 0", UDim2.new(0,0,0,35))
-local timeTxt = CreateLabel("Script Run Time: 00:00:00", UDim2.new(0,0,0,57))
-local cupTxt = CreateLabel("Cup Nhặt Được: 0", UDim2.new(0,0,0,79), Color3.fromRGB(255, 255, 100))
-local keyTxt = CreateLabel("Key Nhặt Được: 0", UDim2.new(0,0,0,101), Color3.fromRGB(255, 100, 255))
-local blTxt = CreateLabel("Blacklisted (5m): 0", UDim2.new(0,0,0,123), Color3.fromRGB(255, 100, 100))
+local title = CreateLabel("DUONNEZOG V31 - AUTO RESET", UDim2.new(0,0,0,10), Color3.fromRGB(0, 255, 150))
+local moneyTxt = CreateLabel("Beli: 0", UDim2.new(0,0,0,35))
+local timeTxt = CreateLabel("Run Time: 00:00:00", UDim2.new(0,0,0,57))
+local cupTxt = CreateLabel("Cup: 0", UDim2.new(0,0,0,79), Color3.fromRGB(255, 255, 100))
+local keyTxt = CreateLabel("Fist: 0", UDim2.new(0,0,0,101), Color3.fromRGB(255, 100, 255))
+local blTxt = CreateLabel("Blacklisted: 0", UDim2.new(0,0,0,123), Color3.fromRGB(255, 100, 100))
 local hopTxt = CreateLabel("Hop in: 25s", UDim2.new(0,0,0,145), Color3.fromRGB(0, 200, 255))
 
---// [4. THEO DÕI ITEM]
-local function Monitor(obj)
-    if obj.Name == "God's Chalice" then 
-        Data.Cup = Data.Cup + 1 
-        SaveData(Data)
-    elseif obj.Name == "Fist of Darkness" then 
-        Data.Key = Data.Key + 1 
-        SaveData(Data) 
-    end
-end
-lp.Backpack.ChildAdded:Connect(Monitor)
-if lp.Character then lp.Character.ChildAdded:Connect(Monitor) end
+--// [4. VÒNG LẶP CHÍNH & RESET NGAY LẬP TỨC]
+task.spawn(function()
+    local lastBeli = lp.Data.Beli.Value
+    while task.wait(1) do
+        pcall(function()
+            -- KIỂM TRA RESET NGÀY MỚI NGAY TRONG KHI ĐANG CHẠY
+            local todayVN = GetVNDate()
+            if Data.LastDate ~= todayVN then
+                Data.LastDate = todayVN
+                Data.Seconds = 0
+                Data.Money = 0
+                Data.Cup = 0
+                Data.Key = 0
+                Data.Blacklist = {}
+                Data.Blacklist[game.JobId] = tick()
+                SaveData(Data)
+            end
 
---// [5. INFINITE HOP]
+            -- Update stats
+            Data.Seconds = Data.Seconds + 1
+            local curBeli = lp.Data.Beli.Value
+            if curBeli > lastBeli then Data.Money = Data.Money + (curBeli - lastBeli) end
+            lastBeli = curBeli
+            
+            -- UI
+            moneyTxt.Text = "Beli Earned: " .. math.floor(Data.Money/1000) .. "k"
+            local h, m, s = math.floor(Data.Seconds/3600), math.floor((Data.Seconds%3600)/60), math.floor(Data.Seconds%60)
+            timeTxt.Text = string.format("Run Time: %02d:%02d:%02d", h, m, s)
+            cupTxt.Text = "Cup Nhặt Được: " .. Data.Cup
+            keyTxt.Text = "Key Nhặt Được: " .. Data.Key
+            local bc = 0; for _ in pairs(Data.Blacklist) do bc = bc + 1 end
+            blTxt.Text = "Blacklisted (5m): " .. bc
+            
+            SaveData(Data)
+        end)
+    end
+end)
+
+--// [5. AUTO CHEST & INFINITE HOP]
 local function Hop()
     getgenv().IsHopping = true
     while true do
@@ -123,42 +138,6 @@ local function Hop()
     end
 end
 
---// [6. VÒNG LẶP CHÍNH (UPDATE STATS)]
-task.spawn(function()
-    local lastBeli = lp.Data.Beli.Value
-    while task.wait(1) do
-        pcall(function()
-            -- Auto Team Marines
-            if not lp.Team or lp.Team.Name == "Neutral" then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", "Marines")
-            end
-            
-            -- Đếm thời gian tích lũy
-            Data.Seconds = Data.Seconds + 1
-            
-            -- Đếm tiền
-            local curBeli = lp.Data.Beli.Value
-            if curBeli > lastBeli then 
-                Data.Money = Data.Money + (curBeli - lastBeli) 
-            end
-            lastBeli = curBeli
-            
-            -- Hiển thị UI
-            moneyTxt.Text = "Beli Earned: " .. math.floor(Data.Money/1000) .. "k"
-            local h, m, s = math.floor(Data.Seconds/3600), math.floor((Data.Seconds%3600)/60), math.floor(Data.Seconds%60)
-            timeTxt.Text = string.format("Script Run Time: %02d:%02d:%02d", h, m, s)
-            
-            cupTxt.Text = "Cup Nhặt Được: " .. Data.Cup
-            keyTxt.Text = "Key Nhặt Được: " .. Data.Key
-            local bc = 0; for _ in pairs(Data.Blacklist) do bc = bc + 1 end
-            blTxt.Text = "Blacklisted (5m): " .. bc
-            
-            SaveData(Data) -- Lưu vào file mỗi giây
-        end)
-    end
-end)
-
---// [7. AUTO CHEST]
 task.spawn(function()
     while task.wait(0.1) do
         if not getgenv().IsHopping then
@@ -183,7 +162,6 @@ task.spawn(function()
     end
 end)
 
---// [8. TIMER 25S ĐỂ NHẢY SERVER]
 task.spawn(function()
     local t = 25
     while task.wait(1) do
@@ -195,6 +173,5 @@ task.spawn(function()
     end
 end)
 
--- TỐI ƯU HÓA: Tắt Render giảm CPU/RAM, Chống AFK
 game:GetService("RunService"):Set3dRenderingEnabled(false)
 for _, v in pairs(getconnections(lp.Idled)) do v:Disable() end
